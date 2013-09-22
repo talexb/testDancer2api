@@ -6,7 +6,7 @@ CREATE TABLE person (
     p_firstName TEXT NOT NULL,
     p_lastName TEXT NOT NULL,
     p_status TEXT NOT NULL,	/* Active, Inactive, Alumnus, Guest, Other */
-    p_voicePart TEXT NOT NULL
+    p_voicePart TEXT		/* Will be necessary eventually */
 );
 
 /*  A group of events, like the Retreat weekend.
@@ -25,10 +25,11 @@ CREATE TABLE event (
     e_eg_id INTEGER REFERENCES event_group(eg_id),
     e_type TEXT NOT NULL,	/* Rehearsal, Gig, Contest, Social */
     e_name TEXT,		/* Rehearsal can be blank. */
-    e_location TEXT NOT NULL,
+    e_status TEXT,		/* Tentative, Confirmed, Cancelled */
+    e_location TEXT,
     e_date TEXT NOT NULL,
-    e_timeStart TEXT NOT NULL,
-    e_timeFinish TEXT NOT NULL
+    e_startTime TEXT NOT NULL,
+    e_endTime TEXT NOT NULL
 );
 
 /*  A sign-up and attendance record that has two purposes: 1. Was this person
@@ -40,3 +41,17 @@ CREATE TABLE person_event (
     pe_expected TEXT NOT NULL,
     pe_actual TEXT NOT NULL
 );
+
+/*  Absence (either a hiatus or a vacation). The start date is probably known,
+ *  but the end date may not be know. And someone can still show up at
+ *  rehearsal when they're on hiatus.
+ */
+
+CREATE TABLE person_absence (
+    pa_id INTEGER PRIMARY KEY,
+    pa_p_id INTEGER REFERENCES person(p_id),
+    pa_startDate TEXT,
+    pa_endDate TEXT,
+    pa_notes TEXT
+);
+
