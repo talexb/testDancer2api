@@ -19,12 +19,11 @@ my $dataFile = "api/TNL-Roster-NameOnly-2013-SeptOct.csv";
     my $csv = Text::CSV->new( { binary => 1 } );
     open( my $fh, '<encoding(utf8)', $dataFile );
 
-    my ( @names1, @names2 );
+    my (@names);
     while ( my $line = $csv->getline($fh) ) {
-        my (@fields) = ( $line->[0], $line->[7] );
-        if ( $fields[0] =~ /\w+\s\w+/ ) { push( @names1, $fields[0] ); }
-        if ( $fields[1] =~ /\w+\s\w+/ ) { push( @names2, $fields[1] ); }
+        if ( $line->[0] =~ /\w+\s\w+/ ) { push( @names, $line->[0] ); }
+        if ( $line->[7] =~ /\w+\s\w+/ ) { push( @names, $line->[7] ); }
     }
-    print join( "\n", @names1, @names2 ) . "\n";
+    print join( "\n", @names ) . "\n";
 }
 
