@@ -34,22 +34,37 @@ sub titleCase {
     defined $dbh or croak "Unable to connect to database " . $dbh->errstr;
 
     my $searchCmd =
-      "SELECT p_id FROM person WHERE p_firstName=? and p_lastName=?";
+      "SELECT p_id, p_voicePart FROM person WHERE p_firstName=? and p_lastName=?";
 
     my $sthSearch = $dbh->prepare($searchCmd);
     defined $sthSearch
       or croak "Failed to prepare statement " . $sthSearch->errstr;
 
     my $searchLikeCmd =
-      "SELECT p_firstName, p_lastName FROM person "
-      ."WHERE p_firstName like ? and p_lastName like ?";
+        "SELECT p_firstName, p_lastName FROM person "
+      . "WHERE p_firstName like ? and p_lastName like ?";
 
-    my $sthLike = $dbh->prepare( $searchLikeCmd);
+    my $sthLike = $dbh->prepare($searchLikeCmd);
     defined $sthLike
       or croak "Failed to prepare statement " . $sthLike->errstr;
 
+    my $updateCmd = "UPDATE person SET p_voicePart=? WHERE p_id=?";
+
+    my $sthUpdate = $dbh->prepare($updateCmd);
+    defined $sthUpdate
+      or croak "Failed to prepare statement " . $sthUpdate->errstr;
+
+    my $insertCmd =
+      "INSERT INTO person_event (pe_p_id, pe_e_id, pe_response) VALUES (?, ?, ?)";
+
+    my $sthInsert = $dbh->prepare($insertCmd);
+    defined $sthInsert
+      or croak "Failed to prepare statement " . $sthInsert->errstr;
+
     while ( my $line = $csv->getline($fh) ) {
         my ( $first, $last, $part ) = ( $line->[9], $line->[10], $line->[11] );
+	my ( $coming, $notes ) = ( $line->[12], $line->[13] );
+
         if ( !length $part || $part =~ /:/ ) { next; }
 
         #  Standardize on title case for names and part.
@@ -96,25 +111,37 @@ sub titleCase {
 
             print ", found, p_id is $href->{p_id}";
 
+	    if ( !defined $href->{p_voicePart} ) {
+                $sthUpdate->execute( $part, $href->{p_id} )
+                  or croak "Failed to execute " . $sthUpdate->errstr;
+                print " updated voice part .."
+	    }
+
+	    print " response: $coming ..";
+	    $sthInsert->execute($href->{p_id},1,$coming,)
+              or croak "Failed to execute " . $sthInsert->errstr;
+            print " updated event #1 .."
         }
         else {
 
             print ", -- NOT FOUND --\n-->Possible matches:\n";
-	    my ( @first ) = split(//,$first);
-	    my ( @last ) = split(//,$last);
+            my (@first) = split( //, $first );
+            my (@last)  = split( //, $last );
 
-	    $sthLike->execute( "$first[0]%", "$last[0]%" )
+            $sthLike->execute( "$first[0]%", "$last[0]%" )
               or croak "Failed to execute " . $sthLike->errstr;
-	    while ( my $href = $sthLike->fetchrow_hashref ) {
-	      print "--> $href->{p_firstName} / $href->{p_lastName}\n"
-	    }
+            while ( my $href = $sthLike->fetchrow_hashref ) {
+                print "--> $href->{p_firstName} / $href->{p_lastName}\n";
+            }
         }
         print "\n";
 
     }
 
     $sthSearch->finish or croak "Failed to finish " . $sthSearch->errstr;
-    $sthLike->finish or croak "Failed to finish " . $sthLike->errstr;
+    $sthLike->finish   or croak "Failed to finish " . $sthLike->errstr;
+    $sthUpdate->finish or croak "Failed to finish " . $sthUpdate->errstr;
+    $sthInsert->finish or croak "Failed to finish " . $sthInsert->errstr;
     $dbh->disconnect   or croak "Failed to disconnect " . $dbh->errstr;
 
     close($fh);
