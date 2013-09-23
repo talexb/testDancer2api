@@ -38,8 +38,8 @@ CREATE TABLE event (
 CREATE TABLE person_event (
     pe_p_id INTEGER REFERENCES person(p_id),
     pe_e_id INTEGER REFERENCES event(e_id),
-    pe_expected TEXT NOT NULL,
-    pe_actual TEXT NOT NULL
+    pe_response TEXT NOT NULL,
+    pe_actual TEXT
 );
 
 /*  Absence (either a hiatus or a vacation). The start date is probably known,
