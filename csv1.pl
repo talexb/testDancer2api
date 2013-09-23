@@ -11,8 +11,10 @@
 use strict;
 use warnings;
 use autodie;
+use Carp;
 
 use Text::CSV;
+use DBI;
 
 my $dataFile = "api/Oct28.csv";
 
@@ -25,49 +27,95 @@ sub titleCase {
 }
 
 {
-    my $csv = Text::CSV->new ({ binary => 1 });
-    open ( my $fh, '<encoding(utf8)', $dataFile);
-    while ( my $line = $csv->getline( $fh ) ) {
-      my ( $first, $last, $part ) = ( $line->[9],$line->[10],$line->[11] );
-      if ( !length $part || $part =~ /:/ ) { next; }
+    my $csv = Text::CSV->new( { binary => 1 } );
+    open( my $fh, '<encoding(utf8)', $dataFile );
 
-      #  Standardize on title case for names and part.
-      if ( $first =~ /^[a-z]+$/ || $first =~ /^[A-Z]+$/ ) {
-        $first = titleCase ( $first );
-        print "f ";
-      }
-      if ( $last =~ /^[a-z]+$/ || $last =~ /^[A-Z]+$/ ) {
-        $last = titleCase ( $last );
-        print "l ";
-      }
-      if ( $part =~ /^[a-z]+$/ || $part =~ /^[A-Z]+$/ ) {
-        $part = titleCase ( $part );
-        print "p ";
-      }
+    my $dbh = DBI->connect( 'dbi:SQLite:dbname=tnl1.db', '', '' );
+    defined $dbh or croak "Unable to connect to database " . $dbh->errstr;
 
-      #  Clean up the parts - some guys may sing two parts.
-      my @subParts = split ( / /,$part );
-      foreach my $bits ( @subParts ) {
+    my $searchCmd =
+      "SELECT p_id FROM person WHERE p_firstName=? and p_lastName=?";
 
-        #  Go with the long form for Bari.
-        if ( $bits eq 'Bari' ) {
-          $bits = 'Baritone';
+    my $sthSearch = $dbh->prepare($searchCmd);
+    defined $sthSearch
+      or croak "Failed to prepare statement " . $sthSearch->errstr;
+
+    my $searchLikeCmd =
+      "SELECT p_firstName, p_lastName FROM person "
+      ."WHERE p_firstName like ? and p_lastName like ?";
+
+    my $sthLike = $dbh->prepare( $searchLikeCmd);
+    defined $sthLike
+      or croak "Failed to prepare statement " . $sthLike->errstr;
+
+    while ( my $line = $csv->getline($fh) ) {
+        my ( $first, $last, $part ) = ( $line->[9], $line->[10], $line->[11] );
+        if ( !length $part || $part =~ /:/ ) { next; }
+
+        #  Standardize on title case for names and part.
+        if ( $first =~ /^[a-z]+$/ || $first =~ /^[A-Z]+$/ ) {
+            $first = titleCase($first);
+            print "f ";
+        }
+        if ( $last =~ /^[a-z]+$/ || $last =~ /^[A-Z]+$/ ) {
+            $last = titleCase($last);
+            print "l ";
+        }
+        if ( $part =~ /^[a-z]+$/ || $part =~ /^[A-Z]+$/ ) {
+            $part = titleCase($part);
+            print "p ";
         }
 
-        #  Cleanup non-alpha from parts.
-        if ( $bits !~ /^[A-Z][a-z]+$/ ) {
-          $bits =~ tr/a-zA-Z//cd;
-          print "c ";
+        #  Clean up the parts - some guys may sing two parts.
+        my @subParts = split( / /, $part );
+        foreach my $bits (@subParts) {
+
+            #  Go with the long form for Bari.
+            if ( $bits eq 'Bari' ) {
+                $bits = 'Baritone';
+            }
+
+            #  Cleanup non-alpha from parts.
+            if ( $bits !~ /^[A-Z][a-z]+$/ ) {
+                $bits =~ tr/a-zA-Z//cd;
+                print "c ";
+            }
+
+            #  Complain if the part still isn't recognizable.
+            next if ( exists $standardParts{$bits} );
+            print "ERROR: Non-standard part $part\n";
         }
 
-        #  Complain if the part still isn't recognizable.
-        next if ( exists $standardParts{ $bits } );
-        print "ERROR: Non-standard part $part\n";
-      }
+        $part = join( ' ', @subParts );
+        print join( ' - ', $first, $last, $part );
 
-      $part = join(' ',@subParts);
-      print join(' - ',$first,$last,$part);
-      print "\n";
+        $sthSearch->execute( $first, $last )
+          or croak "Failed to execute " . $sthSearch->errstr;
+        my $href = $sthSearch->fetchrow_hashref;
+        if ( defined $href->{p_id} ) {
+
+            print ", found, p_id is $href->{p_id}";
+
+        }
+        else {
+
+            print ", -- NOT FOUND --\n-->Possible matches:\n";
+	    my ( @first ) = split(//,$first);
+	    my ( @last ) = split(//,$last);
+
+	    $sthLike->execute( "$first[0]%", "$last[0]%" )
+              or croak "Failed to execute " . $sthLike->errstr;
+	    while ( my $href = $sthLike->fetchrow_hashref ) {
+	      print "--> $href->{p_firstName} / $href->{p_lastName}\n"
+	    }
+        }
+        print "\n";
+
     }
-    close ( $fh);
+
+    $sthSearch->finish or croak "Failed to finish " . $sthSearch->errstr;
+    $sthLike->finish or croak "Failed to finish " . $sthLike->errstr;
+    $dbh->disconnect   or croak "Failed to disconnect " . $dbh->errstr;
+
+    close($fh);
 }
