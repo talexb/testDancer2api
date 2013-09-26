@@ -40,7 +40,8 @@ my $dataFile = "api/TNL-Roster-NameOnly-2013-SeptOct-930.csv";
     defined $sthSearchEvent
       or croak "Failed to prepare statement " . $sthSearchEvent->errstr;
 
-    my $insertCmd = "INSERT INTO event (e_type, e_status, e_date, e_startTime, e_endTime) VALUES (?,?,?,?,?)";
+    my $insertCmd =
+"INSERT INTO event (e_type, e_status, e_date, e_startTime, e_endTime) VALUES (?,?,?,?,?)";
 
     my $sthInsert = $dbh->prepare($insertCmd);
     defined $sthInsert
@@ -59,9 +60,11 @@ my $dataFile = "api/TNL-Roster-NameOnly-2013-SeptOct-930.csv";
         }
         else {
 
-            $sthInsert->execute('Rehearsal','Confirmed',$date,'1900','2200')
+            $sthInsert->execute( 'Rehearsal', 'Confirmed', $date, '1900',
+                '2200' )
               or croak "Failed to execute " . $sthInsert->errstr;
-	    $dateEvent{$date} = $dbh->last_insert_id(undef,undef,'event','e_id');
+            $dateEvent{$date} =
+              $dbh->last_insert_id( undef, undef, 'event', 'e_id' );
         }
     }
     $sthSearchEvent->finish
@@ -69,36 +72,87 @@ my $dataFile = "api/TNL-Roster-NameOnly-2013-SeptOct-930.csv";
     $sthInsert->finish
       or croak "Failed to finish " . $sthInsert->errstr;
 
-    foreach my $date ( keys %dateEvent ) {
-
-        print "Date $date -> $dateEvent{ $date }\n";
-    }
-    exit;
-
     #  OK -- all of the events on the roster exist in the database. Now we can
     #  cycle through the names and check that the people exist in the database.
 
     my $searchPersonCmd =
-      "SELECT p_id FROM person WHERE p_firstName=? AND p_lastName=?";
+      "SELECT p_id, p_status FROM person WHERE p_firstName=? AND p_lastName=?";
 
     my $sthSearchPerson = $dbh->prepare($searchPersonCmd);
     defined $sthSearchPerson
       or croak "Failed to prepare statement " . $sthSearchPerson->errstr;
 
+    #  Database stuff for the inner loop ..
+
+    my $cleanPersonEventCmd =
+      "DELETE FROM person_event WHERE pe_p_id=? and pe_e_id=?";
+
+    my $sthCleanPersonEvent = $dbh->prepare($cleanPersonEventCmd);
+    defined $sthCleanPersonEvent
+      or croak "Failed to prepare statement " . $sthCleanPersonEvent->errstr;
+
+    my $addPersonEventCmd = "INSERT INTO person_event values(?,?,?,?)";
+
+    my $sthAddPersonEvent = $dbh->prepare($addPersonEventCmd);
+    defined $sthAddPersonEvent
+      or croak "Failed to prepare statement " . $sthAddPersonEvent->errstr;
+
     while ( my $line = $csv->getline($fh) ) {
 
+        my $offset = 1;
         my (@names) = map { $line->[$_] } ( 0, 7 );
         foreach my $name (@names) {
 
+            if ( $name =~ /gone/i || $name =~ /hiatus/i ) { next; }
+
             my @subNames = split( /\s/, $name, 2 );
             $sthSearchPerson->execute(@subNames)
-              or croak "Failed to execute " . $sthSearchPerson->errstr;
+              or croak "Failed to execute (with $name) "
+              . $sthSearchPerson->errstr;
 
             my $href = $sthSearchPerson->fetchrow_hashref;
             if ( !defined $href ) {
 
                 print "ERROR: Did not find $name in database.\n";
+                next;
             }
+
+            #  OK, we have the person, now we need to match up the dates with
+            #  the event ids, and add entries to the person_event table. We're
+            #  not going to check that there isn't already something in the
+            #  database; in fact, we'll do a delete beforehand to so as to
+            #  prevent duplicates.  We'll add a record with response (what I
+            #  hope to call 'intent' in the future) set to Yes for Active and
+            #  Prospective members, otherwise No, and actual set to 'Yes' for x
+            #  and 'No' otherwise.
+
+            foreach my $date ( keys %dateEvent ) {
+
+		#  Before I do any of this, I should check to see if this
+		#  person is on hiatus or vacation, and if so, skip this part.
+		#  This logic is going to have to wait until the
+		#  hitaus/vacation table exists in the database.
+
+                $sthCleanPersonEvent->execute( $href->{p_id}, $dateEvent{$date} )
+                  or croak
+                  "Failed to do (with $href->{p_id}, $dateEvent{ $date }) "
+                  . $sthCleanPersonEvent->errstr;
+
+                $sthAddPersonEvent->execute(
+                    $href->{p_id},
+                    $dateEvent{$date},
+                    (
+                             $href->{p_status} eq 'Active'
+                          || $href->{p_status} eq 'Prospect'
+                      ) ? 'Yes' : 'No',
+                    $line->[ $offset++ ] eq 'x' ? 'Yes' : 'No'
+                  )
+                  or croak
+                  "Failed to do (with $href->{p_id}, $dateEvent{ $date }) "
+                  . $sthAddPersonEvent->errstr;
+
+            }
+	    $offset += 2;
         }
     }
 
