@@ -40,6 +40,12 @@ my $dataFile = "api/TNL-Roster-NameOnly-2013-SeptOct-930.csv";
     defined $sthSearchEvent
       or croak "Failed to prepare statement " . $sthSearchEvent->errstr;
 
+    my $insertCmd = "INSERT INTO event (e_type, e_status, e_date, e_startTime, e_endTime) VALUES (?,?,?,?,?)";
+
+    my $sthInsert = $dbh->prepare($insertCmd);
+    defined $sthInsert
+      or croak "Failed to prepare statement " . $sthInsert->errstr;
+
     my ( @errors, %dateEvent );
     foreach my $date (@dates) {
 
@@ -53,19 +59,21 @@ my $dataFile = "api/TNL-Roster-NameOnly-2013-SeptOct-930.csv";
         }
         else {
 
-            push( @errors, "Unable to find event on date $date" );
+            $sthInsert->execute('Rehearsal','Confirmed',$date,'1900','2200')
+              or croak "Failed to execute " . $sthInsert->errstr;
+	    $dateEvent{$date} = $dbh->last_insert_id(undef,undef,'event','e_id');
         }
     }
     $sthSearchEvent->finish
       or croak "Failed to finish " . $sthSearchEvent->errstr;
+    $sthInsert->finish
+      or croak "Failed to finish " . $sthInsert->errstr;
 
-    if (@errors) {
+    foreach my $date ( keys %dateEvent ) {
 
-        print "There were missing dates as follows:\n--> ";
-        print join( "\n--> ", @errors ) . "\n";
-
-        exit;
+        print "Date $date -> $dateEvent{ $date }\n";
     }
+    exit;
 
     #  OK -- all of the events on the roster exist in the database. Now we can
     #  cycle through the names and check that the people exist in the database.
