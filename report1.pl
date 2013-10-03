@@ -31,10 +31,28 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     $sthEvents->execute
       or croak "Failed to execute " . $sthEvents->errstr;
 
+    my $selectAbsences = 
+      "SELECT pa_p_id
+         FROM person_absence
+	WHERE pa_startDate < ? AND pa_endDate > ?";
+
+    my $sthAbsences = $dbh->prepare($selectAbsences);
+    defined $sthAbsences
+      or croak "Failed to prepare statement " . $sthAbsences->errstr;
+
     my @dates;
     while ( my $href = $sthEvents->fetchrow_hashref ) {
 
-      push ( @dates, $href );
+      #  This gets a list of person IDs for the specific date. We turn these
+      #  values into a hash so that later we can see if the person (who might
+      #  have been absent) was actually planning to be away.
+
+      $sthAbsences->execute ( $href->{e_date}, $href->{e_date} )
+        or croak "Failed to execute " . $sthAbsences->errstr;
+      my $aref = $sthAbsences->fetchall_arrayref([0]);
+      my %list = map { $_->[0] => 1 } @$aref;
+
+      push ( @dates, { event => $href, absences => \%list } );
     }
 
     #  OK, this query's going to need some explanation. The output has to be
@@ -45,7 +63,8 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     #  first name for now.
 
     my $selectAttendance = 
-    "SELECT p_voicePart, p_firstName || ' ' || p_lastName AS name, pe_actual 
+    "SELECT p_voicePart, p_firstName || ' ' || p_lastName AS name, pe_actual, 
+            p_id 
        FROM person
        JOIN person_event ON pe_p_id=p_id,
                    event ON    e_id=pe_e_id
@@ -69,15 +88,18 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     my %hash;
     foreach my $date (@dates) {
 
-        $sthAttendance->execute( $date->{e_id} )
+        $sthAttendance->execute( $date->{event}->{e_id} )
           or croak "Failed to execute " . $sthAttendance->errstr;
 
         while ( my $href = $sthAttendance->fetchrow_hashref ) {
 
-            push(
-                @{ $hash{"$href->{p_voicePart}/$href->{name}"} },
-                $href->{pe_actual}
-            );
+	    my $value;
+	    if ( exists $date->{absences}->{$href->{p_id}} ) {
+	      $value = 'Away';
+	    } else {
+	      $value = $href->{pe_actual}; 
+	    }
+            push( @{ $hash{"$href->{p_voicePart}/$href->{name}"} }, $value );
         }
     }
 
