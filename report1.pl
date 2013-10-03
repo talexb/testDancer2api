@@ -18,12 +18,11 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     my $dbh = DBI->connect( 'dbi:SQLite:dbname=tnl1.db', '', '' );
     defined $dbh or croak "Unable to connect to database " . $dbh->errstr;
 
-    my $selectEvents =
-      "SELECT e_id, e_date 
+    my $selectEvents = "SELECT e_id, e_date 
          FROM event
 	WHERE e_type='Rehearsal' AND e_date < date('now')
      ORDER BY e_date";
-     
+
     my $sthEvents = $dbh->prepare($selectEvents);
     defined $sthEvents
       or croak "Failed to prepare statement " . $sthEvents->errstr;
@@ -31,8 +30,7 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     $sthEvents->execute
       or croak "Failed to execute " . $sthEvents->errstr;
 
-    my $selectAbsences = 
-      "SELECT pa_p_id
+    my $selectAbsences = "SELECT pa_p_id
          FROM person_absence
 	WHERE pa_startDate < ? AND pa_endDate > ?";
 
@@ -43,16 +41,16 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     my @dates;
     while ( my $href = $sthEvents->fetchrow_hashref ) {
 
-      #  This gets a list of person IDs for the specific date. We turn these
-      #  values into a hash so that later we can see if the person (who might
-      #  have been absent) was actually planning to be away.
+        #  This gets a list of absences by person IDs for the specific date. We
+        #  turn these values into a hash so that later we can see if the person
+        #  (who might have been absent) was actually planning to be away.
 
-      $sthAbsences->execute ( $href->{e_date}, $href->{e_date} )
-        or croak "Failed to execute " . $sthAbsences->errstr;
-      my $aref = $sthAbsences->fetchall_arrayref([0]);
-      my %list = map { $_->[0] => 1 } @$aref;
+        $sthAbsences->execute( $href->{e_date}, $href->{e_date} )
+          or croak "Failed to execute " . $sthAbsences->errstr;
+        my $aref = $sthAbsences->fetchall_arrayref( [0] );
+        my %list = map { $_->[0] => 1 } @$aref;
 
-      push ( @dates, { event => $href, absences => \%list } );
+        push( @dates, { event => $href, absences => \%list } );
     }
 
     #  OK, this query's going to need some explanation. The output has to be
@@ -62,8 +60,8 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     #  order .. Well, this is going to be a first cut -- they're sorted by
     #  first name for now.
 
-    my $selectAttendance = 
-    "SELECT p_voicePart, p_firstName || ' ' || p_lastName AS name, pe_actual, 
+    my $selectAttendance =
+      "SELECT p_voicePart, p_firstName || ' ' || p_lastName AS name, pe_actual, 
             p_id 
        FROM person
        JOIN person_event ON pe_p_id=p_id,
@@ -93,12 +91,21 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
 
         while ( my $href = $sthAttendance->fetchrow_hashref ) {
 
-	    my $value;
-	    if ( exists $date->{absences}->{$href->{p_id}} ) {
-	      $value = 'Away';
-	    } else {
-	      $value = $href->{pe_actual}; 
-	    }
+	    #  Here's where we mark people as Away if they were on hiatus or on
+	    #  vacation. However, if they showed up anyway, that's handled
+	    #  correctly. (For example, John Mallett showed up Sept 9, even
+	    #  though he'd planned to be away, just so he could announce why he
+	    #  was going to be away.)
+
+            my $value;
+            if ( exists $date->{absences}->{ $href->{p_id} }
+                && $href->{pe_actual} eq 'No' )
+            {
+                $value = 'Away';
+            }
+            else {
+                $value = $href->{pe_actual};
+            }
             push( @{ $hash{"$href->{p_voicePart}/$href->{name}"} }, $value );
         }
     }
@@ -110,7 +117,7 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     #  Hmm .. the above query ignores the hiatus information I have .. perhaps
     #  add that later.
 
-    print Dumper(\@dates,\%hash);
+    print Dumper( \@dates, \%hash );
 
 }
 
