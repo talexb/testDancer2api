@@ -114,10 +114,51 @@ my $outputFile = "/tmp/TNLattendance-Fall2013.csv";
     #  dump out all of the information I want at once .. this is going to have
     #  to do for now.
 
-    #  Hmm .. the above query ignores the hiatus information I have .. perhaps
-    #  add that later.
-
     print Dumper( \@dates, \%hash );
+
+    my $csv = Text::CSV->new ( { binary => 1, eol => "\n" } );
+    open ( my $fh, ">:encoding(utf8)", $outputFile );
+
+    $csv->print ( $fh, [ undef, map { $_->{event}->{e_date} } @dates ] );
+    foreach my $person ( sort sortPartThenName keys %hash ) {
+
+      $csv->print ( $fh, [ $person, @{$hash{ $person }} ] );
+    }
+
+    close ( $fh );
 
 }
 
+sub sortPartThenName {
+
+    #  I'm taking the 'Part/First Last' string and looking at the parts first.
+    #  In some case there are multiple parts, so I'm going by the first part
+    #  only.
+
+    my @parts = map {
+        my @w = split(/\//);
+        if ( $w[0] =~ /(\w+)\s/ ) { $w[0] = $1; }
+        $w[0]
+    } ( $a, $b );
+
+    #  This hash orders the parts as per Steve's original spreadsheet, and if
+    #  the parts of the two singers is different, we report the sort order
+    #  using this hash.
+
+    my %partScores = (
+        'Tenor'         => 1,
+        'Lead'          => 2,
+        'Bass'          => 3,
+        'Baritone'      => 4,
+    );
+
+    if ( $parts[0] ne $parts[1] ) {
+        return $partScores{ $parts[0] } <=> $partScores{ $parts[1] };
+    }
+
+    #  If the singers are in the same section, then we extract the names and
+    #  order by the name (first, then last -- although that may change).
+
+    my @names = map { my @w = split(/\//); $w[1] } ( $a, $b );
+    return $names[0] cmp $names[1];
+}
