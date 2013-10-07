@@ -15,12 +15,15 @@ use TNLattendance::Schema;
     my $schema = TNLattendance::Schema->connect('dbi:SQLite:tnl1.db');
     defined $schema or croak "Unable to connect to database";
 
-    my $result = $schema->resultset('Person')->search(undef,{});
+    my $result =
+      $schema->resultset('Person')
+      ->search( { p_status => 'Active' }, { order_by => 'p_voicepart' } );
     defined $result or croak "Unable to get resultset from DBIC";
 
     foreach my $person ( $result->all ) {
 
         print "Person: "
+          . $person->p_voicepart . " "
           . $person->p_firstname . " "
           . $person->p_lastname . "\n";
     }
